@@ -16,6 +16,7 @@
 load("dragons.RData")
 
 head(dragons)
+View(dragons)
 
 ## Let's say we want to know how the body length affects test scores.
 
@@ -110,9 +111,12 @@ summary(mountain.lm)
 ##----- First mixed model -----##
 
 ### model
-
+mixed.lmer <- lmer(testScore ~ bodyLength2 + (1|mountainRange), data = dragons)
+summary(mixed.lmer)
 ### plots
-
+plot(mixed.lmer)  # looks alright, no patterns evident
+qqnorm(resid(mixed.lmer))
+qqline(resid(mixed.lmer))  # points fall nicely onto the line - good!
 ### summary
 
 ### variance accounted for by mountain ranges
@@ -125,22 +129,74 @@ head(dragons)  # we have site and mountainRange
 str(dragons)  # we took samples from three sites per mountain range and eight mountain ranges in total
 
 ### create new "sample" variable
-
+dragons <- within(dragons, sample <- factor(mountainRange:site))
 
 ##----- Second mixed model -----##
 
 ### model
-
+mixed.lmer2 <- lmer(testScore ~ bodyLength2 + (1|mountainRange) + (1|sample), data = dragons)  # the syntax stays the same, but now the nesting is taken into account
+summary(mixed.lmer2)
 ### summary
 
 ### plot
 
 
-
+(mm_plot <- ggplot(dragons, aes(x = bodyLength, y = testScore, colour = site)) +
+    facet_wrap(~mountainRange, nrow=2) +   # a panel for each mountain range
+    geom_point(alpha = 0.5) +
+    theme_classic() +
+    geom_line(data = cbind(dragons, pred = predict(mixed.lmer2)), aes(y = pred), size = 1) +  # adding predicted line from mixed model 
+    theme(legend.position = "none",
+          panel.spacing = unit(2, "lines"))  # adding space between panels
+)
 ##----- Model selection for the keen -----##
 
 ### full model
+mixed.ranslope <- lmer(testScore ~ bodyLength2 + (1 + bodyLength2|mountainRange/site), data = dragons) 
 
+summary(mixed.ranslope)
+
+### plot
+(mm_plot <- ggplot(dragons, aes(x = bodyLength, y = testScore, colour = site)) +
+    facet_wrap(~mountainRange, nrow=2) +   # a panel for each mountain range
+    geom_point(alpha = 0.5) +
+    theme_classic() +
+    geom_line(data = cbind(dragons, pred = predict(mixed.ranslope)), aes(y = pred), size = 1) +  # adding predicted line from mixed model 
+    theme(legend.position = "none",
+          panel.spacing = unit(2, "lines"))  # adding space between panels
+)
 ### reduced model
 
 ### comparison
+
+library(ggeffects)  # install the package first if you haven't already, then load it
+
+# Extract the prediction data frame
+pred.mm <- ggpredict(mixed.lmer2, terms = c("bodyLength2"))  # this gives overall predictions for the model
+
+# Plot the predictions 
+
+(ggplot(pred.mm) + 
+    geom_line(aes(x = x, y = predicted)) +          # slope
+    geom_ribbon(aes(x = x, ymin = predicted - std.error, ymax = predicted + std.error), 
+                fill = "lightgrey", alpha = 0.5) +  # error band
+    geom_point(data = dragons,                      # adding the raw data (scaled values)
+               aes(x = bodyLength2, y = testScore, colour = mountainRange)) + 
+    labs(x = "Body Length (indexed)", y = "Test Score", 
+         title = "Body length does not affect intelligence in dragons") + 
+    theme_minimal()
+)
+
+
+ggpredict(mixed.lmer2, terms = c("bodyLength2", "mountainRange"), type = "re") %>% 
+  plot() +
+  labs(x = "Body Length", y = "Test Score", title = "Effect of body size on intelligence in dragons") + 
+  theme_minimal()
+
+library(sjPlot)
+
+# Visualise random effects 
+(re.effects <- plot_model(mixed.ranslope, type = "re", show.values = TRUE))
+
+# show summary
+summary(mixed.ranslope)
